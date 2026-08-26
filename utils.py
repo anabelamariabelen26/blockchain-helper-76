@@ -1,23 +1,30 @@
 import time
 import functools
-import logging
+import requests
+from typing import Callable, Any
 
-logger = logging.getLogger("blockchain-helper-76")
-
-def retry_network_operation(max_retries=3, delay=2.0, backoff=2.0):
-    def decorator(func):
+def retry_network_operation(retries: int = 3, delay: float = 1.0, backoff: float = 2.0) -> Callable:
+    def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args, **kwargs) -> Any:
             current_delay = delay
-            for attempt in range(1, max_retries + 1):
+            last_exception = None
+            for attempt in range(retries):
                 try:
                     return func(*args, **kwargs)
-                except Exception as e:
-                    if attempt == max_retries:
-                        logger.error(f"Operation {func.__name__} failed after {max_retries} attempts: {e}")
+                except (requests.RequestException, ConnectionError) as e:
+                    last_exception = e
+                    if attempt == retries - 1:
                         raise
-                    logger.warning(f"Attempt {attempt} failed for {func.__name__}: {e}. Retrying in {current_delay}s...")
                     time.sleep(current_delay)
                     current_delay *= backoff
+            if last_exception:
+                raise last_exception
         return wrapper
     return decorator
+
+@retry_network_operation(retries=3, delay=1.0)
+def fetch_blockchain_data(url: str, params: dict = None) -> dict:
+    response = requests.get(url, params=params, timeout=10)
+    response.raise_for_status()
+    return response.json()
