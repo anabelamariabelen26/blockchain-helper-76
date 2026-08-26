@@ -1,28 +1,43 @@
 import logging
-from logging.handlers import RotatingFileHandler
+import sys
+from typing import Optional
 
 
-def setup_logger(name: str = "blockchain_helper") -> logging.Logger:
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+class BlockchainLogger:
+    _instance: Optional['BlockchainLogger'] = None
     
-    if logger.handlers:
-        return logger
+    def __new__(cls, name: str = 'blockchain-helper-76') -> 'BlockchainLogger':
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialize_logger(name)
+        return cls._instance
+
+    def _initialize_logger(self, name: str) -> None:
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.INFO)
         
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-    
-    file_handler = RotatingFileHandler(
-        "blockchain_helper.log",
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5
-    )
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    
-    return logger
+        if not self.logger.handlers:
+            handler = logging.StreamHandler(sys.stdout)
+            handler.setLevel(logging.INFO)
+            formatter = logging.Formatter(
+                '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+
+    def info(self, message: str, **kwargs: Any) -> None:
+        extra_str = f" | {kwargs}" if kwargs else ""
+        self.logger.info(f"{message}{extra_str}")
+
+    def error(self, message: str, **kwargs: Any) -> None:
+        extra_str = f" | {kwargs}" if kwargs else ""
+        self.logger.error(f"{message}{extra_str}")
+
+    def warning(self, message: str, **kwargs: Any) -> None:
+        extra_str = f" | {kwargs}" if kwargs else ""
+        self.logger.warning(f"{message}{extra_str}")
+
+
+def get_logger(name: str = 'blockchain-helper-76') -> BlockchainLogger:
+    return BlockchainLogger(name)
