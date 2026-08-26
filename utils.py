@@ -1,26 +1,23 @@
-import hashlib
-import json
+import time
+import functools
+import logging
 
+logger = logging.getLogger("blockchain-helper-76")
 
-def hash_transaction(transaction):
-    transaction_string = json.dumps(transaction, sort_keys=True).encode()
-    return hashlib.sha256(transaction_string).hexdigest()
-
-
-def validate_address(address):
-    return len(address) == 42 and address.startswith('0x')
-
-
-def calculate_gas_fee(gas_price, gas_limit):
-    return gas_price * gas_limit
-
-
-def format_transaction_for_broadcast(transaction):
-    return {
-        'to': transaction['to'],
-        'value': transaction['value'],
-        'gas': transaction['gas'],
-        'gasPrice': transaction['gasPrice'],
-        'nonce': transaction['nonce'],
-        'data': transaction.get('data', ''),
-    }
+def retry_network_operation(max_retries=3, delay=2.0, backoff=2.0):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            current_delay = delay
+            for attempt in range(1, max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries:
+                        logger.error(f"Operation {func.__name__} failed after {max_retries} attempts: {e}")
+                        raise
+                    logger.warning(f"Attempt {attempt} failed for {func.__name__}: {e}. Retrying in {current_delay}s...")
+                    time.sleep(current_delay)
+                    current_delay *= backoff
+        return wrapper
+    return decorator
