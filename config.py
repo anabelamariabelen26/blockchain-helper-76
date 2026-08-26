@@ -1,20 +1,44 @@
-from typing import Dict, Any
+import os
+from typing import Any, Dict
 
-class Config:
-    def __init__(self, settings: Dict[str, Any]) -> None:
-        self.settings = settings
+DEFAULT_CONFIG: Dict[str, Any] = {
+    "network": "mainnet",
+    "rpc_url": "https://mainnet.infura.io/v3/default",
+    "gas_limit": 21000,
+    "timeout_seconds": 30,
+    "max_retries": 3,
+}
+
+
+class ConfigLoader:
+    def __init__(self, env_prefix: str = "BC_HELP_") -> None:
+        self.env_prefix = env_prefix
+        self._config = DEFAULT_CONFIG.copy()
+        self._load_from_env()
+
+    def _load_from_env(self) -> None:
+        for key in self._config:
+            env_name = f"{self.env_prefix}{key.upper()}"
+            env_value = os.getenv(env_name)
+            if env_value is not None:
+                self._config[key] = self._cast_value(
+                    env_value, type(self._config[key])
+                )
+
+    @staticmethod
+    def _cast_value(value: str, target_type: type) -> Any:
+        if target_type == bool:
+            return value.lower() in ("true", "1", "yes", "on")
+        try:
+            return target_type(value)
+        except (ValueError, TypeError):
+            return value
 
     def get(self, key: str, default: Any = None) -> Any:
-        return self.settings.get(key, default)
+        return self._config.get(key, default)
 
-    def set(self, key: str, value: Any) -> None:
-        self.settings[key] = value
+    def to_dict(self) -> Dict[str, Any]:
+        return self._config.copy()
 
-    def __repr__(self) -> str:
-        return f"Config(settings={self.settings})"
 
-config = Config(settings={
-    'api_key': 'your_api_key',
-    'api_secret': 'your_api_secret',
-    'network': 'mainnet'
-})
+config = ConfigLoader()
