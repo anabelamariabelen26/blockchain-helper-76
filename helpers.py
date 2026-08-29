@@ -1,36 +1,59 @@
 import hashlib
-import hmac
-import json
-from typing import Any, Dict
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+class Transaction:
+    def __init__(self, sender, recipient, amount):
+        self.sender = sender
+        self.recipient = recipient
+        self.amount = amount
 
-def generate_signature(secret: str, payload: Dict[str, Any]) -> str:
-    serialized = json.dumps(payload, sort_keys=True)
-    signature = hmac.new(
-        secret.encode("utf-8"),
-        serialized.encode("utf-8"),
-        hashlib.sha256
-    ).hexdigest()
-    return signature
+    def to_string(self):
+        return f"{self.sender}{self.recipient}{self.amount}"
 
+class BlockchainHelper:
+    def __init__(self):
+        pass
 
-def verify_signature(secret: str, payload: Dict[str, Any], signature: str) -> bool:
-    expected = generate_signature(secret, payload)
-    return hmac.compare_digest(expected, signature)
+    @lru_cache(maxsize=512)
+    def calculate_block_hash(self, index, previous_hash, transactions_str, timestamp):
+        block_string = f"{index}{previous_hash}{transactions_str}{timestamp}"
+        return hashlib.sha256(block_string.encode('utf-8')).hexdigest()
 
+    def process_transactions_batch(self, transactions):
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(self.validate_tx, tx) for tx in transactions]
+            validated = []
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    validated.append(result)
+            return validated
 
-def sanitize_tx_data(data: Dict[str, Any]) -> Dict[str, Any]:
-    cleaned = {}
-    for key, value in data.items():
-        if value is not None:
-            if isinstance(value, str):
-                cleaned[key] = value.strip()
-            else:
-                cleaned[key] = value
-    return cleaned
+    def validate_tx(self, tx):
+        if not isinstance(tx, Transaction):
+            return None
+        if tx.amount > 0 and len(tx.sender) > 0:
+            return tx
+        return None
 
+    def optimize_chain_validation(self, chain):
+        previous_hash = '0'
+        for block in chain:
+            if block.get('previous_hash') != previous_hash:
+                return False
+            tx_str = ''.join([t.to_string() for t in block.get('transactions', [])])
+            computed = self.calculate_block_hash(
+                block.get('index', 0),
+                block.get('previous_hash', ''),
+                tx_str,
+                block.get('timestamp', 0)
+            )
+            if computed != block.get('hash'):
+                return False
+            previous_hash = block.get('hash')
+        return True
 
-def format_wei_to_ether(wei_value: int) -> float:
-    if wei_value < 0:
-        raise ValueError("Wei value cannot be negative")
-    return wei_value / 10**18
+    def get_block_by_hash(self, chain, hash_value):
+        hash_map = {b.get('hash'): b for b in chain}
+        return hash_map.get(hash_value)
