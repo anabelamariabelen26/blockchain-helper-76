@@ -1,56 +1,60 @@
 import hashlib
 import json
-import time
-from typing import Any, Dict, List
+from functools import lru_cache
 
-def hash_data(data: Dict[str, Any]) -> str:
-    json_str = json.dumps(data, sort_keys=True, separators=(',', ':'))
-    return hashlib.sha256(json_str.encode()).hexdigest()
+class BlockchainCore:
+    def __init__(self):
+        self.chain = []
+        self.pending = []
+        self.create_genesis()
 
-def validate_address(address: str) -> bool:
-    if len(address) != 42 or not address.startswith('0x'):
-        return False
-    try:
-        int(address[2:], 16)
+    def create_genesis(self):
+        block = {
+            'index': 1,
+            'transactions': [],
+            'proof': 1,
+            'previous_hash': '0' * 64
+        }
+        self.chain.append(block)
+
+    def add_transaction(self, sender, recipient, amount):
+        self.pending.append({
+            'sender': sender,
+            'recipient': recipient,
+            'amount': amount
+        })
+
+    def create_block(self, proof):
+        previous_hash = self.hash(self.chain[-1])
+        block = {
+            'index': len(self.chain) + 1,
+            'transactions': self.pending,
+            'proof': proof,
+            'previous_hash': previous_hash
+        }
+        self.chain.append(block)
+        self.pending = []
+        return block
+
+    def hash(self, block):
+        block_string = json.dumps(block, sort_keys=True)
+        return self._cached_hash(block_string)
+
+    @lru_cache(maxsize=128)
+    def _cached_hash(self, block_string):
+        return hashlib.sha256(block_string.encode()).hexdigest()
+
+    def validate_chain(self):
+        for i in range(1, len(self.chain)):
+            current_block = self.chain[i]
+            previous_block = self.chain[i - 1]
+            if current_block['previous_hash'] != self.hash(previous_block):
+                return False
+            if not self.proof_of_work(previous_block['proof'], current_block['proof']):
+                return False
         return True
-    except ValueError:
-        return False
 
-def to_wei(ether: float) -> int:
-    return int(ether * 10 ** 18)
-
-def from_wei(wei: int) -> float:
-    return wei / 10 ** 18
-
-def create_transaction(sender: str, recipient: str, amount: float, gas: int = 21000) -> Dict[str, Any]:
-    tx = {
-        'sender': sender,
-        'recipient': recipient,
-        'amount': amount,
-        'gas': gas,
-        'timestamp': int(time.time())
-    }
-    tx['hash'] = hash_data(tx)
-    return tx
-
-def verify_transaction(tx: Dict[str, Any]) -> bool:
-    if 'hash' not in tx:
-        return False
-    original_hash = tx['hash']
-    tx_copy = {k: v for k, v in tx.items() if k != 'hash'}
-    computed_hash = hash_data(tx_copy)
-    return original_hash == computed_hash
-
-def mine_block(previous_hash: str, transactions: List[Dict[str, Any]], difficulty: int = 4) -> Dict[str, Any]:
-    block = {
-        'previous_hash': previous_hash,
-        'transactions': transactions,
-        'timestamp': int(time.time()),
-        'nonce': 0
-    }
-    while True:
-        block_without_hash = {k: v for k, v in block.items() if k != 'hash'}
-        block['hash'] = hash_data(block_without_hash)
-        if block['hash'].startswith('0' * difficulty):
-            return block
-        block['nonce'] += 1
+    def proof_of_work(self, last_proof, proof):
+        guess = f'{last_proof}{proof}'.encode()
+        guess_hash = hashlib.sha256(guess).hexdigest()
+        return guess_hash[:4] == '0000'
