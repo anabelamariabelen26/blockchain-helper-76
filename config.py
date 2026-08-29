@@ -1,44 +1,71 @@
 import os
-from typing import Any, Dict
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Any
 
-DEFAULT_CONFIG: Dict[str, Any] = {
-    "network": "mainnet",
-    "rpc_url": "https://mainnet.infura.io/v3/default",
-    "gas_limit": 21000,
-    "timeout_seconds": 30,
-    "max_retries": 3,
-}
+@dataclass
+class BlockchainSettings:
+    """Dataclass holding blockchain network settings."""
+    rpc_url: str
+    chain_id: int
+    gas_limit: int = 21000
+    timeout: int = 30
 
+class ConfigManager:
+    """Manages configuration settings for blockchain interactions."""
+    def __init__(self, env_prefix: str = "BLOCKCHAIN") -> None:
+        """Initialize the configuration manager."""
+        self.env_prefix: str = env_prefix
+        self._settings: Dict[str, BlockchainSettings] = self._initialize_settings()
 
-class ConfigLoader:
-    def __init__(self, env_prefix: str = "BC_HELP_") -> None:
-        self.env_prefix = env_prefix
-        self._config = DEFAULT_CONFIG.copy()
-        self._load_from_env()
+    def _initialize_settings(self) -> Dict[str, BlockchainSettings]:
+        """Set up default settings loaded from environment."""
+        return {
+            "ethereum": BlockchainSettings(
+                rpc_url=os.getenv(f"{self.env_prefix}_ETH_RPC", "https://eth.llamarpc.com"),
+                chain_id=1
+            ),
+            "polygon": BlockchainSettings(
+                rpc_url=os.getenv(f"{self.env_prefix}_POLY_RPC", "https://polygon-rpc.com"),
+                chain_id=137,
+                gas_limit=30000
+            ),
+            "bsc": BlockchainSettings(
+                rpc_url=os.getenv(f"{self.env_prefix}_BSC_RPC", "https://bsc-dataseed.binance.org"),
+                chain_id=56
+            )
+        }
 
-    def _load_from_env(self) -> None:
-        for key in self._config:
-            env_name = f"{self.env_prefix}{key.upper()}"
-            env_value = os.getenv(env_name)
-            if env_value is not None:
-                self._config[key] = self._cast_value(
-                    env_value, type(self._config[key])
-                )
+    def get_network_settings(self, network: str) -> Optional[BlockchainSettings]:
+        """Fetch settings object for the given network name."""
+        return self._settings.get(network.lower())
 
-    @staticmethod
-    def _cast_value(value: str, target_type: type) -> Any:
-        if target_type == bool:
-            return value.lower() in ("true", "1", "yes", "on")
-        try:
-            return target_type(value)
-        except (ValueError, TypeError):
-            return value
+    def get_rpc_url(self, network: str) -> str:
+        """Return the RPC URL for the specified network."""
+        settings = self.get_network_settings(network)
+        if settings is None:
+            raise ValueError(f"Unsupported network: {network}")
+        return settings.rpc_url
 
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._config.get(key, default)
+    def get_chain_id(self, network: str) -> int:
+        """Return the chain ID for the specified network."""
+        settings = self.get_network_settings(network)
+        if settings is None:
+            raise ValueError(f"Unsupported network: {network}")
+        return settings.chain_id
 
-    def to_dict(self) -> Dict[str, Any]:
-        return self._config.copy()
+    def list_supported_networks(self) -> List[str]:
+        """Provide list of all supported networks."""
+        return list(self._settings.keys())
 
+    def update_setting(self, network: str, key: str, value: Any) -> None:
+        """Modify a setting for a network if it exists."""
+        if network not in self._settings:
+            raise ValueError(f"Network {network} not supported")
+        settings_obj = self._settings[network]
+        if not hasattr(settings_obj, key):
+            raise AttributeError(f"Invalid setting key: {key}")
+        setattr(settings_obj, key, value)
 
-config = ConfigLoader()
+    def get_all_settings(self) -> Dict[str, BlockchainSettings]:
+        """Return a copy of all configured settings."""
+        return self._settings.copy()
