@@ -1,79 +1,50 @@
 import hashlib
-import json
-from typing import Dict, List, Any
-
-class BlockchainError(Exception):
-    pass
-class InvalidAddressError(BlockchainError):
-    pass
-class InvalidAmountError(BlockchainError):
-    pass
-class InsufficientBalanceError(BlockchainError):
-    pass
-class EmptyTransactionPoolError(BlockchainError):
-    pass
-
-def is_valid_address(address: str) -> bool:
-    if not isinstance(address, str):
-        return False
-    if len(address) != 42:
-        return False
-    if not address.startswith("0x"):
-        return False
-    try:
-        int(address[2:], 16)
-    except ValueError:
-        return False
-    return True
-
-def compute_hash(data: Dict[str, Any]) -> str:
-    encoded = json.dumps(data, sort_keys=True).encode()
-    return hashlib.sha256(encoded).hexdigest()
-
-class CryptoCore:
-    def __init__(self) -> None:
-        self.chain: List[Dict[str, Any]] = []
-        self.balances: Dict[str, int] = {}
-        self.pending: List[Dict[str, Any]] = []
-
-    def add_transaction(self, sender: str, recipient: str, amount: int) -> bool:
-        if not is_valid_address(sender):
-            raise InvalidAddressError("Invalid sender address")
-        if not is_valid_address(recipient):
-            raise InvalidAddressError("Invalid recipient address")
-        if amount <= 0:
-            raise InvalidAmountError("Amount must be positive")
-        current_balance = self.balances.get(sender, 0)
-        if current_balance < amount:
-            raise InsufficientBalanceError("Insufficient balance for transaction")
-        transaction = {
-            "sender": sender,
-            "recipient": recipient,
-            "amount": amount
-        }
-        self.pending.append(transaction)
-        self.balances[sender] = current_balance - amount
-        self.balances[recipient] = self.balances.get(recipient, 0) + amount
+from functools import lru_cache
+class Core:
+    def __init__(self):
+        self.chain = []
+        self.pending_transactions = []
+        self.difficulty = 2
+    @lru_cache(maxsize=128)
+    def calculate_hash(self, index, previous_hash, transactions_str, timestamp, nonce):
+        block_string = f"{index}{previous_hash}{transactions_str}{timestamp}{nonce}"
+        return hashlib.sha256(block_string.encode()).hexdigest()
+    def create_genesis(self):
+        genesis_block = {"index": 0, "timestamp": 0.0, "transactions": [], "previous_hash": "0", "nonce": 0}
+        tx_str = str(genesis_block["transactions"])
+        genesis_block["hash"] = self.calculate_hash(genesis_block["index"], genesis_block["previous_hash"], tx_str, genesis_block["timestamp"], genesis_block["nonce"])
+        self.chain.append(genesis_block)
+    def add_transaction(self, sender, recipient, amount):
+        transaction = {"sender": sender, "recipient": recipient, "amount": amount}
+        self.pending_transactions.append(transaction)
+    def mine_block(self, miner):
+        if not self.chain:
+            self.create_genesis()
+        previous_block = self.chain[-1]
+        tx_str = str(self.pending_transactions)
+        new_block = {"index": len(self.chain), "timestamp": 1609459200.0, "transactions": self.pending_transactions[:], "previous_hash": previous_block["hash"], "nonce": 0}
+        new_block["hash"] = self.calculate_hash(new_block["index"], new_block["previous_hash"], tx_str, new_block["timestamp"], new_block["nonce"])
+        target = "0" * self.difficulty
+        while new_block["hash"][:self.difficulty] != target:
+            new_block["nonce"] += 1
+            new_block["hash"] = self.calculate_hash(new_block["index"], new_block["previous_hash"], tx_str, new_block["timestamp"], new_block["nonce"])
+        self.chain.append(new_block)
+        reward = {"sender": "system", "recipient": miner, "amount": 10.0}
+        self.pending_transactions = [reward]
+        return new_block
+    def validate_chain(self):
+        for i in range(1, len(self.chain)):
+            current_block = self.chain[i]
+            prev_block = self.chain[i-1]
+            if current_block["previous_hash"] != prev_block["hash"]:
+                return False
+            tx_str = str(current_block["transactions"])
+            computed = self.calculate_hash(current_block["index"], current_block["previous_hash"], tx_str, current_block["timestamp"], current_block["nonce"])
+            if current_block["hash"] != computed:
+                return False
         return True
-
-    def mine_pending_transactions(self) -> Dict[str, Any]:
-        if not self.pending:
-            raise EmptyTransactionPoolError("No pending transactions to mine")
-        block = {
-            "index": len(self.chain) + 1,
-            "transactions": self.pending[:],
-            "previous_hash": self.chain[-1]["hash"] if self.chain else "0" * 64,
-            "hash": ""
-        }
-        block["hash"] = compute_hash(block)
-        self.chain.append(block)
-        self.pending = []
-        return block
-
-    def get_balance(self, address: str) -> int:
-        if not is_valid_address(address):
-            raise InvalidAddressError("Invalid address")
-        return self.balances.get(address, 0)
-
-    def get_chain(self) -> List[Dict[str, Any]]:
-        return self.chain
+if __name__ == "__main__":
+    c = Core()
+    c.add_transaction("a", "b", 1)
+    c.mine_block("m")
+    print(c.validate_chain())
