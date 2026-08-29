@@ -1,60 +1,49 @@
 import hashlib
-import json
 from functools import lru_cache
+from typing import List, Dict
+import time
 
-class BlockchainCore:
+class Core:
     def __init__(self):
-        self.chain = []
-        self.pending = []
-        self.create_genesis()
+        self.chain: List[Dict] = []
 
-    def create_genesis(self):
+    @lru_cache(maxsize=256)
+    def _hash_data(self, data: str) -> str:
+        return hashlib.sha256(data.encode('utf-8')).hexdigest()
+
+    def create_block(self, data: str, previous_hash: str = None) -> Dict:
+        if previous_hash is None:
+            previous_hash = self.chain[-1]['hash'] if self.chain else '0' * 64
+        block_data = data + previous_hash
+        block_hash = self._hash_data(block_data)
         block = {
-            'index': 1,
-            'transactions': [],
-            'proof': 1,
-            'previous_hash': '0' * 64
+            'data': data,
+            'previous_hash': previous_hash,
+            'hash': block_hash,
+            'timestamp': time.time()
         }
         self.chain.append(block)
-
-    def add_transaction(self, sender, recipient, amount):
-        self.pending.append({
-            'sender': sender,
-            'recipient': recipient,
-            'amount': amount
-        })
-
-    def create_block(self, proof):
-        previous_hash = self.hash(self.chain[-1])
-        block = {
-            'index': len(self.chain) + 1,
-            'transactions': self.pending,
-            'proof': proof,
-            'previous_hash': previous_hash
-        }
-        self.chain.append(block)
-        self.pending = []
         return block
 
-    def hash(self, block):
-        block_string = json.dumps(block, sort_keys=True)
-        return self._cached_hash(block_string)
-
-    @lru_cache(maxsize=128)
-    def _cached_hash(self, block_string):
-        return hashlib.sha256(block_string.encode()).hexdigest()
-
-    def validate_chain(self):
+    def validate_blockchain(self) -> bool:
         for i in range(1, len(self.chain)):
-            current_block = self.chain[i]
-            previous_block = self.chain[i - 1]
-            if current_block['previous_hash'] != self.hash(previous_block):
+            current = self.chain[i]
+            prev = self.chain[i - 1]
+            if current['previous_hash'] != prev['hash']:
                 return False
-            if not self.proof_of_work(previous_block['proof'], current_block['proof']):
+            expected_hash = self._hash_data(current['data'] + current['previous_hash'])
+            if current['hash'] != expected_hash:
                 return False
         return True
 
-    def proof_of_work(self, last_proof, proof):
-        guess = f'{last_proof}{proof}'.encode()
-        guess_hash = hashlib.sha256(guess).hexdigest()
-        return guess_hash[:4] == '0000'
+    def get_latest_block(self) -> Dict:
+        return self.chain[-1] if self.chain else {}
+
+    def process_transactions(self, transactions: List[str]) -> List[Dict]:
+        blocks = []
+        prev_hash = self.get_latest_block().get('hash', '0' * 64)
+        for transaction in transactions:
+            block = self.create_block(transaction, prev_hash)
+            blocks.append(block)
+            prev_hash = block['hash']
+        return blocks
