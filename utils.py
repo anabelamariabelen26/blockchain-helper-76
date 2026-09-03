@@ -1,28 +1,31 @@
 import time
-import functools
 import logging
-from typing import Callable, Any
+from functools import wraps
+from typing import Callable, Any, Tuple, Type
 
 logger = logging.getLogger(__name__)
 
-def retry_network_op(retries: int = 3, delay: float = 1.0, backoff: float = 2.0):
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            current_delay = delay
-            for attempt in range(retries):
+def retry(
+    exceptions: Tuple[Type[BaseException], ...] = (Exception,),
+    tries: int = 3,
+    delay: float = 1.0,
+    backoff: float = 2.0,
+) -> Callable:
+    """Decorator to retry network operations with exponential backoff."""
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            m_tries, m_delay = tries, delay
+            while m_tries > 1:
                 try:
                     return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    if attempt == retries - 1:
-                        logger.error(f'operation failed after {retries} attempts')
-                        raise e
-                    time.sleep(current_delay)
-                    current_delay *= backoff
+                except exceptions as e:
+                    logger.warning(
+                        f"{e}. Retrying in {m_delay} seconds..."
+                    )
+                    time.sleep(m_delay)
+                    m_tries -= 1
+                    m_delay *= backoff
+            return func(*args, **kwargs)
         return wrapper
     return decorator
-
-@retry_network_op(retries=3)
-def fetch_blockchain_data(endpoint: str):
-    # implementation logic for node communication
-    pass
