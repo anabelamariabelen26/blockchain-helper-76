@@ -1,46 +1,51 @@
-# Blockchain Helper 76
+# blockchain-helper-76
 
-Blockchain Helper 76 is a Python-based toolkit designed to simplify interactions with blockchain networks. This project provides utilities for data validation, transaction creation, and seamless integration with notable cryptocurrencies, streamlining development for crypto enthusiasts and developers alike.
+`blockchain-helper-76` is a lightweight Python toolkit designed to streamline interactions with EVM-compatible blockchains. It simplifies common tasks such as gas estimation, balance tracking, and secure transaction signing for developers building decentralized applications.
 
 ## Features
 
-- **Transaction Handling**: Easily create, sign, and broadcast transactions for Bitcoin and Ethereum without diving deep into the intricacies of their protocols.
-- **Wallet Management**: Generate and manage secure wallets, allowing users to store multiple cryptocurrencies with built-in key encryption.
-- **Blockchain Data Retrieval**: Efficiently fetch and parse blockchain data, including transaction history and balance inquiries, using simplified API calls.
-- **Cross-Chain Compatibility**: Support for multiple blockchain platforms, enabling developers to build versatile applications while minimizing the learning curve.
+*   **Gas Oracle Integration:** Automatically fetches current network gas prices and suggests optimal priority fees to minimize transaction latency.
+*   **Encrypted Wallet Management:** Securely handle private keys using local AES-256 encryption to prevent exposure in application logs.
+*   **Batch Balance Scanner:** Efficiently query token balances for multiple addresses in a single RPC call to reduce latency and API overhead.
+*   **Smart Contract Wrapper:** Provides a high-level interface to interact with deployed contracts without manually decoding ABI inputs.
 
 ## Installation
 
-To get started with Blockchain Helper 76, clone the repository and install the necessary dependencies. Open your terminal and run the following commands:
+Ensure you have Python 3.8+ installed. Install the package via pip:
 
 ```bash
-git clone https://github.com/yourusername/blockchain-helper-76.git
+pip install blockchain-helper-76
+```
+
+For development requirements, clone the repository and run:
+
+```bash
+git clone https://github.com/Developer/blockchain-helper-76.git
 cd blockchain-helper-76
 pip install -r requirements.txt
 ```
 
-## Basic Usage Example
+## Usage
 
-Here's a quick example to demonstrate how to create a wallet and check the balance for Bitcoin:
+Here is a quick example of how to fetch the native balance of an address using the helper:
 
 ```python
-from blockchain_helper import Wallet, BlockchainAPI
+from blockchain_helper import Web3Client
 
-# Create a new wallet
-my_wallet = Wallet.create_wallet('my_secure_password')
+# Initialize client with your RPC endpoint
+client = Web3Client(rpc_url="https://eth.llamarpc.com")
 
-# Fetch balance for the created wallet
-api = BlockchainAPI('bitcoin')
-balance = api.get_balance(my_wallet.address)
+# Get balance in Ether
+balance = client.get_balance("0x742d35Cc6634C0532925a3b844Bc454e4438f44e")
+print(f"Current Balance: {balance} ETH")
 
-print(f'Wallet Address: {my_wallet.address}')
-print(f'Balance: {balance} BTC')
+# Estimate gas for a transaction
+gas_price = client.get_recommended_gas()
+print(f"Recommended Gas Price: {gas_price} Gwei")
 ```
-
-For comprehensive documentation and more advanced usage guidelines, please refer to the `docs/` directory.
 
 ## License
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Blockchain Helper 76 is released under the MIT License. Feel free to use, modify, and distribute it to suit your blockchain development needs.
+Distributed under the MIT License. See `LICENSE` for more information.
