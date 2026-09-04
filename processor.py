@@ -1,46 +1,70 @@
-from typing import Dict, Any, List
+import logging
+from typing import Any, Dict, Optional
 
-class TransactionProcessor:
-    """Processes blockchain transaction data for analysis and formatting."""
+logger = logging.getLogger(__name__)
 
-    def __init__(self, decimals: int = 18) -> None:
-        self.decimals = decimals
 
-    def to_wei(self, value: float) -> int:
-        """Convert a float ether value to wei."""
-        return int(value * (10 ** self.decimals))
+class TransactionError(Exception):
+    pass
 
-    def from_wei(self, value: int) -> float:
-        """Convert a wei integer value to ether."""
-        return float(value / (10 ** self.decimals))
 
-    def extract_transfer_events(
-        self, tx_receipts: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Extract and normalize standard ERC20 transfer events from receipts."""
-        transfers: List[Dict[str, Any]] = []
-        transfer_topic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+class InsufficientBalanceError(TransactionError):
+    pass
 
-        for receipt in tx_receipts:
-            for log in receipt.get("logs", []):
-                topics = log.get("topics", [])
-                if topics and topics[0] == transfer_topic and len(topics) == 3:
-                    try:
-                        transfers.append({
-                            "token": log.get("address"),
-                            "from": "0x" + topics[1][-40:],
-                            "to": "0x" + topics[2][-40:],
-                            "value": int(log.get("data", "0x0"), 16)
-                        })
-                    except (ValueError, IndexError):
-                        continue
-        return transfers
 
-    def calculate_total_fees(self, txs: List[Dict[str, Any]]) -> int:
-        """Calculate total gas fees spent in a list of transactions."""
-        total_fee = 0
-        for tx in txs:
-            gas_used = tx.get("gas_used") or tx.get("gas", 0)
-            gas_price = tx.get("effective_gas_price") or tx.get("gas_price", 0)
-            total_fee += gas_used * gas_price
-        return total_fee
+class InvalidNonceError(TransactionError):
+    pass
+
+
+class BlockProcessor:
+    def __init__(self, max_gas_limit: int = 15_000_000) -> None:
+        self.max_gas_limit = max_gas_limit
+
+    def validate_transaction(self, tx: Dict[str, Any]) -> None:
+        if not isinstance(tx, dict):
+            raise TransactionError("Transaction payload must be a dictionary")
+
+        required_fields = {"sender", "recipient", "value", "nonce", "gas_limit"}
+        missing = required_fields - tx.keys()
+        if missing:
+            raise TransactionError(f"Missing required fields: {missing}")
+
+        if not isinstance(tx["value"], (int, float)) or tx["value"] < 0:
+            raise TransactionError("Invalid transaction value")
+
+        if not isinstance(tx["nonce"], int) or tx["nonce"] < 0:
+            raise InvalidNonceError("Nonce must be a non-negative integer")
+
+        if tx["gas_limit"] > self.max_gas_limit:
+            raise TransactionError(
+                f"Gas limit {tx['gas_limit']} exceeds maximum {self.max_gas_limit}"
+            )
+
+    def process_transaction(
+        self, tx: Dict[str, Any], sender_balance: int, expected_nonce: int
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            self.validate_transaction(tx)
+
+            if tx["nonce"] != expected_nonce:
+                raise InvalidNonceError(
+                    f"Nonce mismatch: expected {expected_nonce}, got {tx['nonce']}"
+                )
+
+            total_cost = tx["value"] + (tx.get("gas_price", 0) * tx["gas_limit"])
+            if sender_balance < total_cost:
+                raise InsufficientBalanceError(
+                    f"Balance {sender_balance} insufficient for cost {total_cost}"
+                )
+
+            return {
+                "status": "success",
+                "tx_hash": f"0x{hash(str(tx)):x}",
+                "remaining_balance": sender_balance - total_cost,
+            }
+        except (TransactionError, InvalidNonceError, InsufficientBalanceError) as e:
+            logger.error("Transaction failed edge check: %s", str(e))
+            raise
+        except Exception as e:
+            logger.critical("Unexpected error during tx processing: %s", str(e))
+            raise TransactionError("System failure processing transaction") from e
