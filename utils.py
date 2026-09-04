@@ -1,31 +1,22 @@
 import time
+import functools
 import logging
-from functools import wraps
-from typing import Callable, Any, Tuple, Type
+from typing import Callable, Any
 
 logger = logging.getLogger(__name__)
 
-def retry(
-    exceptions: Tuple[Type[BaseException], ...] = (Exception,),
-    tries: int = 3,
-    delay: float = 1.0,
-    backoff: float = 2.0,
-) -> Callable:
-    """Decorator to retry network operations with exponential backoff."""
+def retry_on_failure(max_retries: int = 3, delay: float = 1.0) -> Callable:
     def decorator(func: Callable) -> Callable:
-        @wraps(func)
+        @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            m_tries, m_delay = tries, delay
-            while m_tries > 1:
+            last_exception = None
+            for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
-                except exceptions as e:
-                    logger.warning(
-                        f"{e}. Retrying in {m_delay} seconds..."
-                    )
-                    time.sleep(m_delay)
-                    m_tries -= 1
-                    m_delay *= backoff
-            return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    logger.warning(f"attempt {attempt + 1} failed: {e}")
+                    time.sleep(delay * (2 ** attempt))
+            raise last_exception
         return wrapper
     return decorator
