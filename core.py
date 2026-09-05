@@ -1,31 +1,32 @@
 import hashlib
-import json
-from typing import Dict, Any, Optional
+from functools import lru_cache
+from typing import List, Dict, Any
 
-class BlockchainHelper:
-    def __init__(self, chain_id: int = 1):
-        self.chain_id = chain_id
 
-    @staticmethod
-    def generate_keccak256(data: bytes) -> str:
-        sha = hashlib.sha3_256()
-        sha.update(data)
-        return f'0x{sha.hexdigest()}'
+class BlockProcessor:
+    def __init__(self, difficulty: int = 4):
+        self.difficulty = difficulty
+        self.target = "0" * difficulty
 
-    def prepare_transaction(self, nonce: int, to_address: str, value_wei: int, gas_limit: int, gas_price_gwei: int, data: Optional[str] = None) -> Dict[str, Any]:
-        if not to_address.startswith('0x') or len(to_address) != 42:
-            raise ValueError('Invalid recipient address format')
-        
-        return {
-            'chainId': self.chain_id,
-            'nonce': nonce,
-            'to': to_address.lower(),
-            'value': value_wei,
-            'gas': gas_limit,
-            'gasPrice': gas_price_gwei * (10**9),
-            'data': data or '0x'
-        }
+    @lru_cache(maxsize=1024)
+    def calculate_hash(self, block_data: str) -> str:
+        return hashlib.sha256(block_data.encode("utf-8")).hexdigest()
 
-    def hash_transaction(self, tx: Dict[str, Any]) -> str:
-        serialized = json.dumps(tx, sort_keys=True).encode('utf-8')
-        return self.generate_keccak256(serialized)
+    def batch_process_transactions(self, transactions: List[Dict[str, Any]]) -> List[str]:
+        processed_hashes = []
+        for tx in transactions:
+            tx_string = f"{tx.get('sender')}:{tx.get('recipient')}:{tx.get('amount')}:{tx.get('nonce')}"
+            tx_hash = self.calculate_hash(tx_string)
+            processed_hashes.append(tx_hash)
+        return processed_hashes
+
+    def verify_proof_of_work(self, block_header: str, nonce: int) -> bool:
+        candidate = f"{block_header}:{nonce}"
+        block_hash = self.calculate_hash(candidate)
+        return block_hash.startswith(self.target)
+
+    def find_nonce(self, block_header: str, max_iterations: int = 1000000) -> int:
+        for nonce in range(max_iterations):
+            if self.verify_proof_of_work(block_header, nonce):
+                return nonce
+        return -1
