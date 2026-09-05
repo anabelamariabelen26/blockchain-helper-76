@@ -1,32 +1,26 @@
 import hashlib
-from functools import lru_cache
-from typing import List, Dict, Any
+import hmac
+import json
+from typing import Any, Dict
 
+def calculate_sha256(data: str) -> str:
+    return hashlib.sha256(data.encode('utf-8')).hexdigest()
 
-class BlockProcessor:
-    def __init__(self, difficulty: int = 4):
-        self.difficulty = difficulty
-        self.target = "0" * difficulty
+def generate_hmac_signature(secret: str, message: str) -> str:
+    return hmac.new(
+        secret.encode('utf-8'),
+        message.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
 
-    @lru_cache(maxsize=1024)
-    def calculate_hash(self, block_data: str) -> str:
-        return hashlib.sha256(block_data.encode("utf-8")).hexdigest()
+def format_payload(data: Dict[str, Any]) -> str:
+    return json.dumps(data, sort_keys=True, separators=(',', ':'))
 
-    def batch_process_transactions(self, transactions: List[Dict[str, Any]]) -> List[str]:
-        processed_hashes = []
-        for tx in transactions:
-            tx_string = f"{tx.get('sender')}:{tx.get('recipient')}:{tx.get('amount')}:{tx.get('nonce')}"
-            tx_hash = self.calculate_hash(tx_string)
-            processed_hashes.append(tx_hash)
-        return processed_hashes
+def validate_checksum(data: str, expected_hash: str) -> bool:
+    return hmac.compare_digest(calculate_sha256(data), expected_hash)
 
-    def verify_proof_of_work(self, block_header: str, nonce: int) -> bool:
-        candidate = f"{block_header}:{nonce}"
-        block_hash = self.calculate_hash(candidate)
-        return block_hash.startswith(self.target)
+def parse_hex(hex_string: str) -> bytes:
+    return bytes.fromhex(hex_string.lstrip('0x'))
 
-    def find_nonce(self, block_header: str, max_iterations: int = 1000000) -> int:
-        for nonce in range(max_iterations):
-            if self.verify_proof_of_work(block_header, nonce):
-                return nonce
-        return -1
+def to_wei(amount: float, decimals: int = 18) -> int:
+    return int(amount * (10**decimals))
